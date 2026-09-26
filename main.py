@@ -1,19 +1,18 @@
 import logging
-import asyncio
+from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 
 # --- CONFIGURATION ---
-TOKEN = "8986389422:AAFLALfo_GQ133AWtXplLQWh7vvGJbk5Oek"   # Paste your real token
+TOKEN = "8986389422:AAFLALfo_GQ133AWtXplLQWh7vvGJbk5Oek"  # Paste your real token
 ADMIN_ID = 8741292312  # @miniapploverofficial
 COURSE_INVITE_LINK = "https://t.me/+05IthcLeP3xlZWQ0"
 
-bot = Bot(token=TOKEN)
 dp = Dispatcher()
+app = FastAPI()  # Vercel requires this!
 
 
 # --- BOT LOGIC: START MENU ---
@@ -27,7 +26,7 @@ async def start_command(message: types.Message):
                          reply_markup=keyboard)
 
 
-# --- BUY ACTIONS ---
+# --- BUY ACTIONS (Updated Bank Details) ---
 @dp.callback_query(F.data == "buy_course")
 async def buy_course(callback: types.CallbackQuery):
     await callback.answer()
@@ -62,7 +61,7 @@ async def buy_lovable(callback: types.CallbackQuery):
 
 # --- STATELESS RECEIPT UPLOAD ---
 @dp.message(F.photo)
-async def receipt_received(message: types.Message):
+async def receipt_received(message: types.Message, bot: Bot):
     username = f"@{message.from_user.username}" if message.from_user.username else str(message.from_user.id)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -84,7 +83,7 @@ async def receipt_received(message: types.Message):
 
 # --- ADMIN APPROVAL LOGIC ---
 @dp.callback_query(F.data.startswith("approve_"))
-async def approve_payment(callback: types.CallbackQuery):
+async def approve_payment(callback: types.CallbackQuery, bot: Bot):
     await callback.answer()
     parts = callback.data.split("_")
     item_type = parts[1]
@@ -108,7 +107,7 @@ async def approve_payment(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("reject_"))
-async def reject_payment(callback: types.CallbackQuery):
+async def reject_payment(callback: types.CallbackQuery, bot: Bot):
     await callback.answer()
     user_id = int(callback.data.split("_")[2])
 
@@ -120,7 +119,7 @@ async def reject_payment(callback: types.CallbackQuery):
 
 # --- BULLETPROOF EMAIL COLLECTION ---
 @dp.message(F.text.contains("@") & F.text.contains("."))
-async def email_received(message: types.Message):
+async def email_received(message: types.Message, bot: Bot):
     email = message.text.strip()
     await message.answer(
         "✅ Thank you! Your email has been confirmed. Your Lovable Pro Lite items and instructions will be sent to you shortly.")
@@ -135,12 +134,16 @@ async def email_received(message: types.Message):
     )
 
 
-# --- START POLLING ---
-async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
-    print("Starting bot...")
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# --- FASTAPI WEBHOOK HANDLER FOR VERCEL ---
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    bot = Bot(token=TOKEN)
+    try:
+        data = await request.json()
+        update = types.Update.model_validate(data, context={"bot": bot})
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        logging.error(f"Error processing update: {e}")
+    finally:
+        await bot.session.close()
+    return {"status": "ok"}
