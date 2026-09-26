@@ -11,7 +11,7 @@ from aiogram.fsm.state import StatesGroup, State
 TOKEN = "8986389422:AAFLALfo_GQ133AWtXplLQWh7vvGJbk5Oek"
 ADMIN_ID = 8741292312 # Your Telegram ID
 CHANNEL_ID = "@IdeasToClientsOfficial"  # Your Private Channel ID
-WEBHOOK_URL = "https://your-app-name.onrender.com/webhook" # You will get this in Step 3
+WEBHOOK_URL = "https://course-enrollment-bot.onrender.com/webhook" # You will get this in Step 3
 COURSE_PRICE_STARS = 100  # Amount in Telegram Stars
 
 bot = Bot(token=TOKEN)
