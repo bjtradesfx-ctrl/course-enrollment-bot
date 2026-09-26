@@ -31,12 +31,13 @@ async def start_command(message: types.Message):
 
 @dp.callback_query(F.data == "pay_stars")
 async def process_stars_payment(callback: types.CallbackQuery):
+    await callback.answer() # Stops the loading spinner
     await bot.send_invoice(
         chat_id=callback.from_user.id,
         title="Course Enrollment",
         description="Full access to the private channel.",
         payload="course_payload",
-        provider_token="",  # Must be empty for Telegram Stars
+        provider_token="",
         currency="XTR",
         prices=[LabeledPrice(label="Course", amount=COURSE_PRICE_STARS)]
     )
@@ -52,6 +53,7 @@ async def successful_payment(message: types.Message):
 
 @dp.callback_query(F.data == "pay_bank")
 async def process_bank_payment(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer() # Stops the loading spinner
     account_details = "🏦 **Bank Details:**\nBank: OPay\nAcct: 1234567890\nName: ONIPEDE BOLAJI VICTOR\n\nPlease transfer and send a screenshot of the receipt here."
     await callback.message.answer(account_details, parse_mode="Markdown")
     await state.set_state(Payment.waiting_for_receipt)
@@ -70,6 +72,7 @@ async def receipt_received(message: types.Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("approve_"))
 async def approve_payment(callback: types.CallbackQuery):
+    await callback.answer() # Stops the loading spinner
     user_id = int(callback.data.split("_")[1])
     invite_link = await bot.create_chat_invite_link(chat_id=CHANNEL_ID, member_limit=1)
     await bot.send_message(chat_id=user_id, text=f"Payment Approved! ✅ Here is your link:\n{invite_link.invite_link}")
@@ -77,6 +80,7 @@ async def approve_payment(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("reject_"))
 async def reject_payment(callback: types.CallbackQuery):
+    await callback.answer() # Stops the loading spinner
     user_id = int(callback.data.split("_")[1])
     await bot.send_message(chat_id=user_id, text="Your payment was rejected. Please contact support.")
     await callback.message.edit_caption(caption="Rejected ❌")
@@ -86,7 +90,7 @@ async def reject_payment(callback: types.CallbackQuery):
 async def lifespan(app: FastAPI):
     await bot.set_webhook(WEBHOOK_URL)
     yield
-    await bot.delete_webhook()
+    # delete_webhook() intentionally removed
 
 app = FastAPI(lifespan=lifespan)
 
