@@ -8,15 +8,14 @@ from aiogram.filters import Command
 from aiogram.types import LabeledPrice, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.fsm.storage.base import StorageKey
 
 # --- CONFIGURATION ---
-TOKEN = "8986389422:AAFLALfo_GQ133AWtXplLQWh7vvGJbk5Oek"
-ADMIN_ID = 8741292312 # Your Telegram ID
-CHANNEL_ID = "@IdeasToClientsOfficial"  # Your Private Channel ID
-WEBHOOK_URL = "https://course-enrollment-bot.onrender.com/webhook" # You will get this in Step 3
-COURSE_PRICE_STARS = 100  # Amount in Telegram Stars
+TOKEN = "8986389422:AAFLALfo_GQ133AWtXplLQWh7vvGJbk5Oek"  # Paste your real token
+ADMIN_ID = 8741292312  # @miniapploverofficial
+WEBHOOK_URL = "https://course-enrollment-bot.onrender.com/webhook"
 
-# Telegram Fragment payout rate ($0.0133 per Star) guarantees you receive the exact Naira equivalent.
+COURSE_INVITE_LINK = "https://t.me/+05IthcLeP3xlZWQ0"
 STAR_PAYOUT_USD = 0.0133
 
 bot = Bot(token=TOKEN)
@@ -25,6 +24,7 @@ dp = Dispatcher()
 
 class Payment(StatesGroup):
     waiting_for_receipt = State()
+    waiting_for_email = State()
 
 
 # --- DYNAMIC EXCHANGE RATE CALCULATION ---
@@ -37,7 +37,6 @@ async def get_stars_amount(naira_price: int) -> int:
                 usd_amount = naira_price / ngn_rate
                 return math.ceil(usd_amount / STAR_PAYOUT_USD)
     except Exception:
-        # Emergency fallback rate if the API goes offline
         return math.ceil((naira_price / 1500) / STAR_PAYOUT_USD)
 
 
@@ -91,7 +90,7 @@ async def lovable_menu(callback: types.CallbackQuery):
 async def process_stars_payment(callback: types.CallbackQuery):
     await callback.answer()
     parts = callback.data.split("_")
-    item_type = parts[1]  # "course" or "lovable"
+    item_type = parts[1]
     amount = int(parts[2])
 
     title = "IdeasToClients Course" if item_type == "course" else "Lovable Pro Lite"
@@ -114,21 +113,21 @@ async def pre_checkout(pre_checkout_query: types.PreCheckoutQuery):
 
 
 @dp.message(F.successful_payment)
-async def successful_payment(message: types.Message):
+async def successful_payment(message: types.Message, state: FSMContext):
     payload = message.successful_payment.invoice_payload
 
     if payload == "payload_course":
-        invite_link = await bot.create_chat_invite_link(chat_id=CHANNEL_ID, member_limit=1)
         await message.answer(
-            f"Payment successful! ⭐️ Here is your access link to IdeasToClients:\n{invite_link.invite_link}")
+            f"🎉 Congratulations on your successful payment! ⭐️\n\nHere is your link to join the PAID group:\n{COURSE_INVITE_LINK}")
         await bot.send_message(ADMIN_ID,
                                f"⭐️ New Stars payment for IdeasToClients Course from ID {message.from_user.id}!")
 
     elif payload == "payload_lovable":
         await message.answer(
-            "Payment successful! ⭐️ Your Lovable Pro Lite activation is being processed. The admin will contact you shortly.")
+            "🎉 Payment successful! ⭐️\n\nPlease reply to this message with your **email address** so we can send your Lovable Pro Lite activation and instructions.")
+        await state.set_state(Payment.waiting_for_email)
         await bot.send_message(ADMIN_ID,
-                               f"⭐️ New Stars payment for Lovable Pro Lite from @{message.from_user.username or message.from_user.id}! Please activate their account.")
+                               f"⭐️ New Stars payment for Lovable Pro Lite from @{message.from_user.username or message.from_user.id}! Waiting for them to provide their email...")
 
 
 # --- BANK TRANSFER ROUTING ---
@@ -186,12 +185,18 @@ async def approve_payment(callback: types.CallbackQuery):
     user_id = int(parts[2])
 
     if item_type == "course":
-        invite_link = await bot.create_chat_invite_link(chat_id=CHANNEL_ID, member_limit=1)
         await bot.send_message(chat_id=user_id,
-                               text=f"Payment Approved! ✅ Here is your link to IdeasToClients:\n{invite_link.invite_link}")
+                               text=f"🎉 Payment Approved! ✅\n\nCongratulations! Here is your link to join the PAID group:\n{COURSE_INVITE_LINK}")
+
     elif item_type == "lovable":
+        # Force the user into the waiting_for_email state from the admin's chat
+        user_state = FSMContext(
+            storage=dp.storage,
+            key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+        )
+        await user_state.set_state(Payment.waiting_for_email)
         await bot.send_message(chat_id=user_id,
-                               text="Payment Approved! ✅ Your Lovable Pro Lite is now active. Please check your email or await further instructions.")
+                               text="🎉 Payment Approved! ✅\n\nPlease reply to this message with your **email address** to receive your Lovable Pro Lite activation and instructions.")
 
     await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n**Status:** Approved ✅",
                                         parse_mode="Markdown")
@@ -207,6 +212,25 @@ async def reject_payment(callback: types.CallbackQuery):
                            text="Your payment was rejected. Please contact @miniapploverofficial for support.")
     await callback.message.edit_caption(caption=f"{callback.message.caption}\n\n**Status:** Rejected ❌",
                                         parse_mode="Markdown")
+
+
+# --- POST-PAYMENT EMAIL COLLECTION ---
+@dp.message(Payment.waiting_for_email, F.text)
+async def email_received(message: types.Message, state: FSMContext):
+    email = message.text
+    await message.answer(
+        "✅ Thank you! Your email has been confirmed. Your Lovable Pro Lite items and instructions will be sent to you shortly.")
+
+    # Notify Admin to fulfill the order
+    await bot.send_message(
+        chat_id=ADMIN_ID,
+        text=f"🛒 **Lovable Pro Lite Delivery Info**\n"
+             f"User: @{message.from_user.username or message.from_user.id}\n"
+             f"Email: `{email}`\n\n"
+             f"Please email them the activation instructions.",
+        parse_mode="Markdown"
+    )
+    await state.clear()
 
 
 # --- FASTAPI WEBHOOK LIFECYCLE ---
