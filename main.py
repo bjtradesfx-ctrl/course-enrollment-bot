@@ -1,19 +1,19 @@
 import logging
-from fastapi import FastAPI, Request
+import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 
-# Configure logging so errors don't fail silently in Vercel
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 
 # --- CONFIGURATION ---
-TOKEN = "8986389422:AAFLALfo_GQ133AWtXplLQWh7vvGJbk5Oek"  # Paste your real token
+TOKEN = "8986389422:AAFLALfo_GQ133AWtXplLQWh7vvGJbk5Oek"   # Paste your real token
 ADMIN_ID = 8741292312  # @miniapploverofficial
 COURSE_INVITE_LINK = "https://t.me/+05IthcLeP3xlZWQ0"
 
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
-app = FastAPI()
 
 
 # --- BOT LOGIC: START MENU ---
@@ -35,9 +35,9 @@ async def buy_course(callback: types.CallbackQuery):
         "🎓 <b>IdeasToClients Course</b>\n\n"
         "🏦 <b>Bank Details</b>\n"
         "Amount: ₦20,000\n"
-        "Bank: OPay\n"
-        "Acct: 1234567890\n"
-        "Name: ONIPEDE BOLAJI VICTOR\n\n"
+        "Bank: Moniepoint MFB\n"
+        "Acct: 3004552028\n"
+        "Name: Bolaji Victor Onipede\n\n"
         "Please transfer the exact amount and send a screenshot of the receipt here."
     )
     await callback.message.edit_text(account_details, parse_mode="HTML")
@@ -52,9 +52,9 @@ async def buy_lovable(callback: types.CallbackQuery):
         "• 1 Year Duration | Fast Activation\n\n"
         "🏦 <b>Bank Details</b>\n"
         "Amount: ₦15,000\n"
-        "Bank: OPay\n"
-        "Acct: 1234567890\n"
-        "Name: ONIPEDE BOLAJI VICTOR\n\n"
+        "Bank: Moniepoint MFB\n"
+        "Acct: 3004552028\n"
+        "Name: Bolaji Victor Onipede\n\n"
         "Please transfer the exact amount and send a screenshot of the receipt here."
     )
     await callback.message.edit_text(account_details, parse_mode="HTML")
@@ -62,7 +62,7 @@ async def buy_lovable(callback: types.CallbackQuery):
 
 # --- STATELESS RECEIPT UPLOAD ---
 @dp.message(F.photo)
-async def receipt_received(message: types.Message, bot: Bot):
+async def receipt_received(message: types.Message):
     username = f"@{message.from_user.username}" if message.from_user.username else str(message.from_user.id)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -84,7 +84,7 @@ async def receipt_received(message: types.Message, bot: Bot):
 
 # --- ADMIN APPROVAL LOGIC ---
 @dp.callback_query(F.data.startswith("approve_"))
-async def approve_payment(callback: types.CallbackQuery, bot: Bot):
+async def approve_payment(callback: types.CallbackQuery):
     await callback.answer()
     parts = callback.data.split("_")
     item_type = parts[1]
@@ -108,7 +108,7 @@ async def approve_payment(callback: types.CallbackQuery, bot: Bot):
 
 
 @dp.callback_query(F.data.startswith("reject_"))
-async def reject_payment(callback: types.CallbackQuery, bot: Bot):
+async def reject_payment(callback: types.CallbackQuery):
     await callback.answer()
     user_id = int(callback.data.split("_")[2])
 
@@ -118,36 +118,29 @@ async def reject_payment(callback: types.CallbackQuery, bot: Bot):
                                         parse_mode="HTML")
 
 
-# --- STATELESS EMAIL COLLECTION ---
-@dp.message(F.reply_to_message)
-async def email_received(message: types.Message, bot: Bot):
-    if "Lovable Pro Lite" in message.reply_to_message.text:
-        email = message.text
-        await message.answer(
-            "✅ Thank you! Your email has been confirmed. Your Lovable Pro Lite items and instructions will be sent to you shortly.")
+# --- BULLETPROOF EMAIL COLLECTION ---
+@dp.message(F.text.contains("@") & F.text.contains("."))
+async def email_received(message: types.Message):
+    email = message.text.strip()
+    await message.answer(
+        "✅ Thank you! Your email has been confirmed. Your Lovable Pro Lite items and instructions will be sent to you shortly.")
 
-        await bot.send_message(
-            chat_id=ADMIN_ID,
-            text=f"🛒 <b>Lovable Pro Lite Delivery Info</b>\n"
-                 f"User: @{message.from_user.username or message.from_user.id}\n"
-                 f"Email: <code>{email}</code>\n\n"
-                 f"Please email them the activation instructions.",
-            parse_mode="HTML"
-        )
+    await bot.send_message(
+        chat_id=ADMIN_ID,
+        text=f"🛒 <b>Lovable Pro Lite Delivery Info</b>\n"
+             f"User: @{message.from_user.username or message.from_user.id}\n"
+             f"Email: <code>{email}</code>\n\n"
+             f"Please email them the activation instructions.",
+        parse_mode="HTML"
+    )
 
 
-# --- FASTAPI WEBHOOK ---
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    # Initialize Bot per-request to avoid Vercel event loop crashes
-    bot = Bot(token=TOKEN)
-    try:
-        data = await request.json()
-        update = types.Update.model_validate(data, context={"bot": bot})
-        await dp.feed_update(bot, update)
-    except Exception as e:
-        logging.error(f"Error processing update: {e}")
-    finally:
-        # Crucial: Destroy the session before the serverless container sleeps
-        await bot.session.close()
-    return {"status": "ok"}
+# --- START POLLING ---
+async def main():
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("Starting bot...")
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
