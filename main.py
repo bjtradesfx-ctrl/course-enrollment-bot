@@ -11,7 +11,7 @@ from aiogram.fsm.storage.base import StorageKey
 # --- CONFIGURATION ---
 TOKEN = "8986389422:AAFLALfo_GQ133AWtXplLQWh7vvGJbk5Oek" # Paste your real token
 ADMIN_ID = 8741292312  # @miniapploverofficial
-WEBHOOK_URL = "https://course-enrollment-bot.onrender.com/webhook"
+WEBHOOK_URL = "https://course-enrollment-bot.vercel.app/webhook"
 
 COURSE_INVITE_LINK = "https://t.me/+05IthcLeP3xlZWQ0"
 
