@@ -1,18 +1,19 @@
 import logging
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 
+# Configure logging so errors don't fail silently in Vercel
+logging.basicConfig(level=logging.INFO)
+
 # --- CONFIGURATION ---
 TOKEN = "8986389422:AAFLALfo_GQ133AWtXplLQWh7vvGJbk5Oek"  # Paste your real token
 ADMIN_ID = 8741292312  # @miniapploverofficial
-WEBHOOK_URL = "https://course-enrollment-bot.vercel.app/webhook"
 COURSE_INVITE_LINK = "https://t.me/+05IthcLeP3xlZWQ0"
 
-bot = Bot(token=TOKEN)
 dp = Dispatcher()
+app = FastAPI()
 
 
 # --- BOT LOGIC: START MENU ---
@@ -26,7 +27,7 @@ async def start_command(message: types.Message):
                          reply_markup=keyboard)
 
 
-# --- BUY ACTIONS (HTML Formatting to prevent crashes) ---
+# --- BUY ACTIONS ---
 @dp.callback_query(F.data == "buy_course")
 async def buy_course(callback: types.CallbackQuery):
     await callback.answer()
@@ -61,10 +62,9 @@ async def buy_lovable(callback: types.CallbackQuery):
 
 # --- STATELESS RECEIPT UPLOAD ---
 @dp.message(F.photo)
-async def receipt_received(message: types.Message):
+async def receipt_received(message: types.Message, bot: Bot):
     username = f"@{message.from_user.username}" if message.from_user.username else str(message.from_user.id)
 
-    # Universal admin buttons. The admin looks at the amount and decides what to approve.
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Approve Course ✅", callback_data=f"approve_course_{message.from_user.id}")],
         [InlineKeyboardButton(text="Approve Lovable ✅", callback_data=f"approve_lovable_{message.from_user.id}")],
@@ -84,7 +84,7 @@ async def receipt_received(message: types.Message):
 
 # --- ADMIN APPROVAL LOGIC ---
 @dp.callback_query(F.data.startswith("approve_"))
-async def approve_payment(callback: types.CallbackQuery):
+async def approve_payment(callback: types.CallbackQuery, bot: Bot):
     await callback.answer()
     parts = callback.data.split("_")
     item_type = parts[1]
@@ -97,7 +97,6 @@ async def approve_payment(callback: types.CallbackQuery):
             caption=f"{callback.message.caption}\n\n<b>Status:</b> Approved for Course ✅", parse_mode="HTML")
 
     elif item_type == "lovable":
-        # ForceReply forces the user's Telegram app to reply directly to this specific message statelessly
         await bot.send_message(
             chat_id=user_id,
             text="🎉 Payment Approved for Lovable Pro Lite! ✅\n\nPlease <b>reply directly to this message</b> with your email address to receive your activation instructions.",
@@ -109,7 +108,7 @@ async def approve_payment(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("reject_"))
-async def reject_payment(callback: types.CallbackQuery):
+async def reject_payment(callback: types.CallbackQuery, bot: Bot):
     await callback.answer()
     user_id = int(callback.data.split("_")[2])
 
@@ -121,8 +120,7 @@ async def reject_payment(callback: types.CallbackQuery):
 
 # --- STATELESS EMAIL COLLECTION ---
 @dp.message(F.reply_to_message)
-async def email_received(message: types.Message):
-    # Only process the email if they are replying to the specific Lovable approval message
+async def email_received(message: types.Message, bot: Bot):
     if "Lovable Pro Lite" in message.reply_to_message.text:
         email = message.text
         await message.answer(
@@ -138,18 +136,18 @@ async def email_received(message: types.Message):
         )
 
 
-# --- FASTAPI WEBHOOK LIFECYCLE ---
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await bot.set_webhook(WEBHOOK_URL)
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
-
-
+# --- FASTAPI WEBHOOK ---
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    update = types.Update.model_validate(await request.json(), context={"bot": bot})
-    await dp.feed_update(bot, update)
+    # Initialize Bot per-request to avoid Vercel event loop crashes
+    bot = Bot(token=TOKEN)
+    try:
+        data = await request.json()
+        update = types.Update.model_validate(data, context={"bot": bot})
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        logging.error(f"Error processing update: {e}")
+    finally:
+        # Crucial: Destroy the session before the serverless container sleeps
+        await bot.session.close()
     return {"status": "ok"}
